@@ -7,8 +7,8 @@ import ctypes
 with open("./db.pass", "r") as pasw:
     pas = base64.b64decode(pasw.read().rstrip()).decode('UTF-8')
 
-    with open("./linker.ip", "r") as config:
-        ip = config.read().rstrip()
+with open("./linker.ip", "r") as config:
+    ip = config.read().rstrip()
 
 
 def log(err):

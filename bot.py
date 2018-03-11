@@ -6,14 +6,16 @@ import re
 import subprocess
 import pymysql
 import base64
+import requests
 
 logger = telebot.logger
 telebot.logger.setLevel(logging.DEBUG)
 bot = None
 myChatId = 1234 # YOUR CHAT ID
 
-with open("./raspi.tok", "r") as token:
-    bot = telebot.TeleBot(token.read().rstrip(), threaded=False)
+with open("./raspi.tok", "r") as tok:
+    token = tok.read().rstrip()
+    bot = telebot.TeleBot(token, threaded=False)
 
 with open("./db.pass", "r") as pasw:
     pas = base64.b64decode(pasw.read().rstrip()).decode('UTF-8')
@@ -92,7 +94,8 @@ def sendWelcome(message):
 /ssh        Switch the SSH server
 /vpn       Switch the VPN server
 /ip           Get the pip
-/sdown  Shut it down baby''')
+/sdown  Shut it down baby
+/reboot  Wanna fresh start?''')
 
 
 @bot.message_handler(commands=['ip'])
@@ -127,6 +130,14 @@ def shutItDown(msg):
     bot.send_message(getId(msg), response)
 
 
+@bot.message_handler(commands=['reboot'])
+def reboot(msg):
+    typing(msg)
+    bot.send_message(getId(msg), 'See you in a sec!')
+    response = runLinuxCommand(['sudo', 'shutdown', '-r', '-t', '1'])
+    typing(msg)
+    bot.send_message(getId(msg), response)
+
 
 @bot.message_handler(func=lambda msg: msg.text == 'Cancel')
 def cancel(msg):
@@ -134,7 +145,7 @@ def cancel(msg):
     bot.send_message(getId(msg), 'Action cancelled', reply_markup=types.ReplyKeyboardRemove(selective=False))
 
 
-@bot.message_handler(func=lambda msg: re.match(r'Turn \w{3} \w{2,3}', msg.text))
+@bot.message_handler(func=lambda msg: re.match(r'Turn \w{3} \w{2,3}', msg.text if msg.text else ""))
 def switchServerState(msg):
     typing(msg)
     server = msg.text.split(' ')[1]
@@ -146,7 +157,7 @@ def switchServerState(msg):
         bot.send_message(getId(msg), 'Ups...\n' + message)
 
 
-@bot.message_handler(func=lambda msg: re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', msg.text))
+@bot.message_handler(func=lambda msg: re.findall('http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', msg.text if msg.text else ""))
 def storeLink(msg):
     typing(msg)
     if not ruben(msg):
@@ -168,6 +179,41 @@ def storeLink(msg):
             bot.send_message(getId(msg), 'Something went very wrong... 😅\n')
             return
         bot.send_message(getId(msg), 'The following link will be open on your PC:\n' + url)
+    try:
+        db.close()
+    except Exception:
+        return
+
+
+@bot.message_handler(content_types=["audio", "document", "photo", "video"])
+def storeFile(msg):
+    typing(msg)
+    if msg.content_type == "photo":
+        fileId = getattr(msg, msg.content_type)[-1].file_id
+        fileName = fileId[-10:] + ".jpg"
+    else:
+        fileId = getattr(msg, msg.content_type).file_id
+        fileName = getattr(msg, msg.content_type).file_name
+    fileInfo = bot.get_file(fileId)
+    fileResponse = requests.get('https://api.telegram.org/file/bot{0}/{1}'.format(token, fileInfo.file_path))
+    saveFile = open("/var/www/html/files/" + fileName, "wb")
+    saveFile.write(fileResponse.content)
+    saveFile.close()
+    try:
+        db = pymysql.connect('localhost', 'phpmyadmin', pas, 'PI', autocommit=True)
+    except Exception as e:
+        bot.send_message(getId(msg), 'Something went very wrong... 😅\n')
+        return
+    url = 'http://' + getIp() + '/filer.php?file=' + fileName
+    try:
+        cursor = db.cursor()
+        sql = "INSERT INTO LINKS (LINK) VALUES ('" + parseInjection(url) + "')"
+        cursor.execute(sql)
+        cursor.close()
+    except Exception as e:
+        bot.send_message(getId(msg), 'Something went very wrong... 😅\n')
+        return
+    bot.reply_to(msg, "Archivo recivido")
     try:
         db.close()
     except Exception:
