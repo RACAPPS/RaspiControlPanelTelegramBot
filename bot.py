@@ -213,7 +213,7 @@ def storeFile(msg):
     except Exception as e:
         bot.send_message(getId(msg), 'Something went very wrong... 😅\n')
         return
-    bot.reply_to(msg, "Archivo recivido")
+    bot.reply_to(msg, "File recieved")
     try:
         db.close()
     except Exception:
